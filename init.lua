@@ -477,12 +477,18 @@ local servers = {
   -- tsserver = {},
   -- html = { filetypes = { 'html', 'twig', 'hbs'} },
 
+  denols = {},
   lua_ls = {
     Lua = {
       workspace = { checkThirdParty = false },
       telemetry = { enable = false },
     },
   },
+}
+
+-- Required for denols
+vim.g.markdown_fenced_languages = {
+  "ts=typescript"
 }
 
 -- Setup neovim lua configuration
