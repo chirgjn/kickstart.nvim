@@ -226,11 +226,22 @@ require('lazy').setup({
 -- See `:help vim.o`
 -- NOTE: You can change these options as you wish!
 
+-- Setup indentation
+-- Use spaces
+-- Tab = indentation = 4 spaces
+vim.o.tabstop = 4
+vim.o.softtabstop = 4
+vim.o.shiftwidth = 4
+vim.o.expandtab = true
+
 -- Set highlight on search
 vim.o.hlsearch = false
 
 -- Make line numbers default
 vim.wo.number = true
+
+-- Enable relative line numbers
+vim.o.relativenumber = true
 
 -- Enable mouse mode
 vim.o.mouse = 'a'
@@ -325,11 +336,11 @@ vim.keymap.set('n', '<leader>sr', require('telescope.builtin').resume, { desc = 
 vim.defer_fn(function()
   require('nvim-treesitter.configs').setup {
     -- Add languages to be installed here that you want installed for treesitter
-    ensure_installed = { 'c', 'cpp', 'go', 'lua', 'python', 'rust', 'tsx', 'javascript', 'typescript', 'vimdoc', 'vim' },
-  
+    ensure_installed = { 'c', 'cpp', 'go', 'javascript', 'lua', 'python', 'rust', 'toml', 'tsx', 'typescript', 'vimdoc', 'vim', 'zig' },
+
     -- Autoinstall languages that are not installed. Defaults to false (but you can change for yourself!)
     auto_install = false,
-  
+
     highlight = { enable = true },
     indent = { enable = true },
     incremental_selection = {
