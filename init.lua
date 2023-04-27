@@ -474,9 +474,9 @@ local servers = {
   -- gopls = {},
   -- pyright = {},
   -- rust_analyzer = {},
-  -- tsserver = {},
   -- html = { filetypes = { 'html', 'twig', 'hbs'} },
 
+  tsserver = {},
   lua_ls = {
     Lua = {
       workspace = { checkThirdParty = false },
