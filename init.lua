@@ -477,6 +477,7 @@ local servers = {
   -- tsserver = {},
   -- html = { filetypes = { 'html', 'twig', 'hbs'} },
 
+  zls = {},
   lua_ls = {
     Lua = {
       workspace = { checkThirdParty = false },
