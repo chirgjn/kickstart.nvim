@@ -858,15 +858,25 @@ require('lazy').setup({
           }
         end
       end,
-      formatters_by_ft = {
-        lua = { 'stylua' },
-        go = { 'gofumpt' },
-        -- Conform can also run multiple formatters sequentially
-        -- python = { "isort", "black" },
-        --
-        -- You can use 'stop_after_first' to run the first available formatter from the list
-        javascript = { 'prettierd', 'prettier', stop_after_first = true },
-      },
+      formatters_by_ft = (function()
+        local prettier = { 'prettierd', 'prettier', stop_after_first = true }
+        local zls = { 'zls' }
+        return {
+          lua = { 'stylua' },
+          go = { 'gofumpt' },
+          -- Conform can also run multiple formatters sequentially
+          -- python = { "isort", "black" },
+          --
+          -- Prettier-based formatters (uses prettierd for speed, falls back to prettier)
+          html = prettier,
+          htmldjango = prettier,
+          javascript = prettier,
+          json = prettier,
+          -- Zig formatters
+          zig = zls,
+          zon = zls,
+        }
+      end)(),
     },
   },
 
