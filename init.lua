@@ -490,7 +490,14 @@ require('lazy').setup({
       -- Automatically install LSPs and related tools to stdpath for Neovim
       -- Mason must be loaded before its dependents so we need to set it up here.
       -- NOTE: `opts = {}` is the same as calling `require('mason').setup({})`
-      { 'mason-org/mason.nvim', opts = {} },
+      {
+        'mason-org/mason.nvim',
+        opts = {
+          -- Put Mason at the END of PATH so mise/brew tools take precedence
+          -- This ensures system-managed tools are preferred over Mason's versions
+          PATH = 'append',
+        },
+      },
       'mason-org/mason-lspconfig.nvim',
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
@@ -712,43 +719,112 @@ require('lazy').setup({
         },
       }
 
-      -- Ensure the servers and tools above are installed
-      --
-      -- To check the current status of installed tools and/or manually install
-      -- other tools, you can run
-      --    :Mason
-      --
-      -- You can press `g?` for help in this menu.
-      --
-      -- `mason` had to be setup earlier: to configure its options see the
-      -- `dependencies` table for `nvim-lspconfig` above.
-      --
-      -- You can add other tools here that you want Mason to install
-      -- for you, so that they are available from within Neovim.
-      local ensure_installed = vim.tbl_keys(servers or {})
-      vim.list_extend(ensure_installed, {
-        'stylua', -- Used to format Lua code
-        'proselint',
-        'prettierd',
-        'gofumpt',
-      })
+      -- Conditional Tool Installation
+      -- Only installs tools via Mason if they're not already in system PATH.
+      -- Mason's PATH setting is "append", so system tools (mise/brew) take precedence.
+      -- Run :Mason to view/manage installed tools.
+      local ok, mason_lspconfig = pcall(require, 'mason-lspconfig')
+      if not ok then
+        vim.notify('mason-lspconfig not available, skipping LSP configuration', vim.log.levels.WARN)
+        return
+      end
+
+      local debug_lsp_install = false -- Set true to log installation decisions
+      local lspconfig_to_package = mason_lspconfig.get_mappings().lspconfig_to_package
+      local mason_dir = vim.fn.stdpath 'data' .. '/mason'
+
+      -- Load nvim-lspconfig default configs (cached to avoid repeated file reads)
+      local lspconfig_defaults = {}
+      local function get_lspconfig_default(server_name)
+        if lspconfig_defaults[server_name] == nil then
+          local lspconfig_path = vim.fn.stdpath 'data' .. '/lazy/nvim-lspconfig/lsp/' .. server_name .. '.lua'
+          local ok, config = pcall(dofile, lspconfig_path)
+          lspconfig_defaults[server_name] = ok and config or false
+        end
+        return lspconfig_defaults[server_name]
+      end
+
+      -- Check if tool should be installed via Mason (true = install, false = skip)
+      local function should_install(server_name)
+        local default_config = get_lspconfig_default(server_name)
+        local executable_name = (default_config and default_config.cmd and default_config.cmd[1]) or (lspconfig_to_package[server_name] or server_name)
+        local exe_path = vim.fn.exepath(executable_name)
+
+        -- Mason is at end of PATH, so if found, check if it's from Mason or system
+        local is_system_tool = exe_path ~= '' and not vim.startswith(exe_path, mason_dir)
+
+        if debug_lsp_install then
+          local status = exe_path == '' and 'NOT FOUND (will install)' or (is_system_tool and string.format('FOUND: %s (skip install)', exe_path) or 'Only in Mason (keep)')
+          print(string.format('[LSP Install] %s: %s', server_name, status))
+        end
+        return not is_system_tool
+      end
+
+      -- Build installation list (skips tools in PATH or with custom conditions)
+      local ensure_installed = {}
+      local mason_managed = {} -- Track which servers will be Mason-managed
+
+      for server_name, server_config in pairs(servers or {}) do
+        local skip_custom = server_config.condition and server_config.condition()
+        local skip_in_path = not should_install(server_name)
+        if not (skip_custom or skip_in_path) then
+          local pkg = lspconfig_to_package[server_name] or server_name
+          table.insert(ensure_installed, pkg)
+          mason_managed[server_name] = true
+        end
+      end
+
+      -- Formatters/linters (configured in conform.nvim)
+      local additional_tools = { 'stylua', 'proselint', 'prettierd', 'gofumpt' }
+      for _, tool in ipairs(additional_tools) do
+        if should_install(tool) then
+          table.insert(ensure_installed, tool)
+        end
+      end
+
+      if debug_lsp_install then
+        print(string.format('[LSP Install] Installing %d tools via Mason:', #ensure_installed))
+        for _, tool in ipairs(ensure_installed) do
+          print('  - ' .. tool)
+        end
+      end
+
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      require('mason-lspconfig').setup {
-        ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
-        automatic_enable = true,
-        automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
-      }
+      -- LSP Server Configuration (Neovim 0.11+)
+      -- Uses modern vim.lsp.config() + vim.lsp.enable() API instead of deprecated lspconfig.setup()
+      -- See: https://github.com/neovim/nvim-lspconfig/blob/master/doc/lspconfig.txt
+      local non_mason_servers = {}
+
+      for server_name, server_config in pairs(servers or {}) do
+        -- Get defaults from nvim-lspconfig (cached to avoid repeated reads)
+        local base_config = get_lspconfig_default(server_name) or {}
+
+        -- Merge: defaults < user config < capabilities
+        local config = vim.tbl_deep_extend('force', base_config, server_config)
+        config.condition = nil -- Remove condition field (not part of LSP config)
+        config.capabilities = vim.tbl_deep_extend('force', {}, capabilities, config.capabilities or {})
+        vim.lsp.config(server_name, config)
+
+        -- Track non-Mason servers for manual enablement
+        if not mason_managed[server_name] then
+          table.insert(non_mason_servers, server_name)
+        end
+      end
+
+      -- Mason-managed servers are auto-enabled by mason-lspconfig
+      require('mason-lspconfig').setup { automatic_enable = true }
+
+      -- Manually enable non-Mason servers (from system PATH)
+      if #non_mason_servers > 0 then
+        if debug_lsp_install then
+          print(string.format('[LSP Enable] Enabling %d system PATH servers:', #non_mason_servers))
+          for _, server in ipairs(non_mason_servers) do
+            print('  - ' .. server)
+          end
+        end
+        vim.lsp.enable(non_mason_servers)
+      end
     end,
   },
 
