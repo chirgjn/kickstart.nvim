@@ -622,7 +622,6 @@ require('lazy').setup({
             },
           },
         },
-        zls = {},
         ruff = {},
         basedpyright = {},
 
